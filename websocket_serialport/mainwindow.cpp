@@ -6,10 +6,13 @@
 
 QT_USE_NAMESPACE
 
-// globalne zmienne
+/// globalne zmienne
+//serial port
 QList <QSerialPortInfo> available_port;     // lista portów pod którymi są urządzenia
 const QSerialPortInfo *info;                // obecnie wybrany serial port
 QSerialPort port;                           // obecnie otwarty port
+
+//zmienne ogolne
 QString QStr_chenardAnswer;                 // odpowiedź z chenard
 QString QStr_chenardQuestion;               // zmienna do chenard
 QString QStr_cmdForSite;                    // zmienna typu temp, do wysłania na stronę
@@ -37,15 +40,18 @@ int n_literaPola;
 int n_cyfraPola;
 
 
-MainWindow::MainWindow(quint16 port, QWidget *parent) :
+MainWindow::MainWindow(quint16 port, QWidget *parent) : //konstruktor
     QMainWindow(parent),
     m_pWebSocketServer(Q_NULLPTR),
     m_clients(),
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    info = NULL;
-    searchDevices();
+    info = NULL; //wartośc wskażnika obecnie wybranego portu ustgawiamy na pustą wartość
+    searchDevices(); //wyszukujemy obecnie podłączone urządzenia usb
+
+    //łączymy sygnał wciśnięcia przycisku w menu odpowiadającego za żądanie
+    //dodatkowego zaktualizowania listy portów z odpowiednim slotem
     connect(ui->action_refreshPorts,SIGNAL(triggered()),this,SLOT(refresh()));
 
     ///////websockets
@@ -62,7 +68,7 @@ MainWindow::MainWindow(quint16 port, QWidget *parent) :
     }///////
 }
 
-MainWindow::~MainWindow()
+MainWindow::~MainWindow() //destruktor
 {
     if(port.isOpen())
         port.close();
@@ -148,6 +154,7 @@ void MainWindow::simplyPieceMoving(QString QStr_msgToProcess)
 }
 
 // aktualizowanie listy z urządzeniami
+//Tutaj wyszukujemy obecnie podłączone urządzenia usb i „wrzucamy” je do wcześniej przygotowanej listy
 void MainWindow::searchDevices()
 {
     // dodanie ich do listy
@@ -165,11 +172,13 @@ void MainWindow::searchDevices()
     ui->port->addItem("NULL");
     for(int i=0;i<porty;i++)
     {
-        ui->port->addItem(available_port.at(i).portName());
+        ui->port->addItem(available_port.at(i).portName()); //wypełnianie combo boxa portami
     }
 }
 
-void MainWindow::on_port_currentIndexChanged(int index)
+//Slot jest aktywowany po zmianie wartości przez użytkownika w combo box’ie. Ustawia on wskaźnik
+//na nowy obiekt (lub nic) i wyświetla odpowiednią informację w pasku statusu
+void MainWindow::on_port_currentIndexChanged(int index) //zmiana/wybór portu
 {
     if(port.isOpen()) port.close();
     QString txt = "NULL";
@@ -177,11 +186,13 @@ void MainWindow::on_port_currentIndexChanged(int index)
         info = &available_port.at(index-1);
         txt = info->portName();
 
+        //funkcja setPort() dziedziczy wszystkie atrybuty portu typu BaudRate, DataBits, Parity itd.
         port.setPort(available_port.at(index-1));
         if(!port.open(QIODevice::ReadWrite))
             QMessageBox::warning(this,"Device error","Unable to open port.");
     }
     else
+        //wskaźnik czyszczony, by nie wskazywał wcześniejszych informacji ze wskaźnika z pamięci
         info = NULL;
 
     ui->statusBar->showMessage("Selected port: " + txt,2000);
@@ -192,7 +203,7 @@ void MainWindow::refresh()
     searchDevices();
 }
 
-void MainWindow::on_commandLine_returnPressed()
+void MainWindow::on_commandLine_returnPressed() //wciśnięcie przycisku entera
 {
     // jeżeli nie wybrano żadnego urządzenia nie wysyłamy
     if(info == NULL) {
@@ -207,12 +218,12 @@ void MainWindow::on_commandLine_returnPressed()
 
 void MainWindow::on_enterButton_clicked() //wciśnięcie entera
 {
-    on_commandLine_returnPressed();
+    on_commandLine_returnPressed(); //odpala tą samą funkcję co przy wciśnięciu przycisku entera
 }
 
-void MainWindow::addTextToConsole(QString msg, bool sender)
+void MainWindow::addTextToConsole(QString msg, bool sender) //dodawanie komunikatu do konsoli
 {
-    if(msg.isEmpty()) return;
+    if(msg.isEmpty()) return; //blokada możliwości wysyłania pustej wiadomości na serial port
 
     // komendy działające na form, ale nie na port
     if(msg == "/clear") { //czyszczenie okna serial portu w formie
@@ -258,7 +269,9 @@ void MainWindow::receive() //odbierz wiadomość z serial portu
             r_data += port.readAll();
         }
 
-        QString str(r_data);
+        QString str(r_data); //konwersja danych z serial portu na QString
+        //usuwamy z odbieranych wiadomości znak końca linii. program nie ma mozliwości odbierania
+        //kilka wiadomości naraz (i nie powinien potrzebować tego)
         str.remove("$");
 
         addTextToConsole(str);

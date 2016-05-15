@@ -33,10 +33,10 @@ public:
 
 private slots:
     //serial port
-    void on_port_currentIndexChanged(int index);
+    void on_port_currentIndexChanged(int index); //zmiana/wybór portu
     void refresh();
-    void on_commandLine_returnPressed();
-    void on_enterButton_clicked();
+    void on_commandLine_returnPressed(); //reakcja na wciśnięcie entera na klawiaturze...
+    void on_enterButton_clicked(); //... i przycisku w programie
 
     //tcp
     void connected(); //sygnał i slot muszą mieć takie same przyjmowane argumenty
@@ -55,9 +55,11 @@ private:
 
     //serial port
     void searchDevices();
+    //addTextToConsole jako argumenty przyjmuje wiadomość, którą ma wstawić na konsolę i info o tym czy
+    //jest ona od użytkownika (a więc należy ją jeszcze wysłać do urządzenia), czy od urządzenia
     void addTextToConsole(QString text, bool sender=false);
-    void send(QString msg);
-    void receive();
+    void send(QString msg); //wysyłanie wiadomośći na usb
+    void receive(); //odbieranie wiadomości z usb
     void simplyPieceMoving(QString QStr_messageToProcess);
     void findBoardPos(QString QStr_pieceRejecting);
 
