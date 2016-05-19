@@ -24,7 +24,10 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(quint16 port, QWidget *parent = 0); //konstruktor. pobiera port
+    explicit MainWindow(quint16 port, QWidget *parent = 0); //konstruktor. pobiera port.
+    //dobrze by było nadać temu portowi jakiś przydomek typu "tcp_port" by się wyróżniał od portu usb...
+    //...nie udało mi się to ostatnim razem
+
     virtual ~MainWindow();
 
     void doConnect(); //tcp
@@ -37,6 +40,7 @@ private slots:
     void refresh();
     void on_commandLine_returnPressed(); //reakcja na wciśnięcie entera na klawiaturze...
     void on_enterButton_clicked(); //... i przycisku w programie
+    void readData(); //sczytywanie danych lecących asynchronicznie z usb
 
     //tcp
     void connected(); //sygnał i slot muszą mieć takie same przyjmowane argumenty
@@ -50,17 +54,20 @@ private Q_SLOTS:
     void processMessage(QString QStr_messageToProcess);
     void socketDisconnected();
 
+    void on_visual_clicked();
+
 private:
     Ui::MainWindow *ui;
 
     //serial port
     void searchDevices();
-    //addTextToConsole jako argumenty przyjmuje wiadomość, którą ma wstawić na konsolę i info o tym czy
+    QSerialPort *usb_port;
+    //addTextToUsbConsole jako argumenty przyjmuje wiadomość, którą ma wstawić na konsolę i info o tym czy
     //jest ona od użytkownika (a więc należy ją jeszcze wysłać do urządzenia), czy od urządzenia
-    void addTextToConsole(QString text, bool sender=false);
-    void send(QString msg); //wysyłanie wiadomośći na usb
+    void addTextToUsbConsole(QString text, bool sender=false);
+    void sendDataToUsb(QString QStr_msg, bool sender=false); //wysyłanie wiadomośći na usb
     void receive(); //odbieranie wiadomości z usb
-    void simplyPieceMoving(QString QStr_messageToProcess);
+    void simplyPieceMoving(QString QStr_msgFromSerial);
     void findBoardPos(QString QStr_pieceRejecting);
 
     //websockets

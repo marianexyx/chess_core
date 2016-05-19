@@ -10,7 +10,8 @@ QT_USE_NAMESPACE
 //serial port
 QList <QSerialPortInfo> available_port;     // lista portów pod którymi są urządzenia
 const QSerialPortInfo *info;                // obecnie wybrany serial port
-QSerialPort port;                           // obecnie otwarty port
+QSerialPort usb_port;                       // obecnie otwarty port
+QByteArray QByteA_data;                     // macierz niezorganizowanych danych przypływających z usb
 
 //zmienne ogolne
 QString QStr_chenardAnswer;                 // odpowiedź z chenard
@@ -19,7 +20,7 @@ QString QStr_cmdForSite;                    // zmienna typu temp, do wysłania n
 QString QStr_movementMade;                  // zmienna pamiętająca ruch wykonany ze strony
 QString QStr_pieceFrom;                     // z jakiego pola pionek będzie podnoszony
 QString QStr_pieceTo;                       // na jakie pole pionek będzie przenoszony
-QString QStr_msgFromSerial;                 // wiadomość która przyszła z serial portu
+QString QStr_msgFromSerial = "";            // wiadomość która przyszła z serial portu
 
 //zamienniki mysqla
 QString QStr_nameWhite = "Biały";           // nazwa białego- startowo "Biały
@@ -47,12 +48,15 @@ MainWindow::MainWindow(quint16 port, QWidget *parent) : //konstruktor
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    usb_port = new QSerialPort(this);
     info = NULL; //wartośc wskażnika obecnie wybranego portu ustgawiamy na pustą wartość
     searchDevices(); //wyszukujemy obecnie podłączone urządzenia usb
 
     //łączymy sygnał wciśnięcia przycisku w menu odpowiadającego za żądanie
     //dodatkowego zaktualizowania listy portów z odpowiednim slotem
     connect(ui->action_refreshPorts,SIGNAL(triggered()),this,SLOT(refresh()));
+
+    connect(usb_port,SIGNAL(readyRead()),this,SLOT(readData())); //??? czy to się nei gryzie z readyRead w tcp
 
     ///////websockets
     m_pWebSocketServer = new QWebSocketServer(QStringLiteral("Chat Server"),
@@ -70,8 +74,8 @@ MainWindow::MainWindow(quint16 port, QWidget *parent) : //konstruktor
 
 MainWindow::~MainWindow() //destruktor
 {
-    if(port.isOpen())
-        port.close();
+    if(usb_port->isOpen())
+        usb_port->close();
 
     m_pWebSocketServer->close();
     qDeleteAll(m_clients.begin(), m_clients.end());
@@ -94,63 +98,84 @@ void MainWindow::findBoardPos(QString QStr_pieceRejecting)
 
     n_cyfraPola = QStr_pieceRejecting.mid(2,1).toInt() - 1;
 
-    addTextToWebsocketConsole("n_literaPola = " + QString::number(n_literaPola) + "\n");
+    /* addTextToWebsocketConsole("n_literaPola = " + QString::number(n_literaPola) + "\n");
     addTextToWebsocketConsole("n_cyfraPola = " + QString::number(n_cyfraPola) + "\n");
-    addTextToWebsocketConsole("a_b_board[m][n] = " + QString::number(a_b_board[n_literaPola][n_cyfraPola]) + "\n");
+    addTextToWebsocketConsole("a_b_board[m][n] = " + QString::number(a_b_board[n_literaPola][n_cyfraPola]) + "\n"); */
 }
 
-void MainWindow::simplyPieceMoving(QString QStr_msgToProcess)
+void MainWindow::simplyPieceMoving(QString QStr_msgFromSerial) // !! to nie tylko są wiadomość z usb
 {
-    QStr_pieceFrom = "[" + QStr_msgToProcess.mid(5,2) + "]f";
-    QStr_pieceTo   = "[" + QStr_msgToProcess.mid(7,2) + "]t";
+    if (QStr_msgFromSerial.left(4) == "move" && QStr_msgFromSerial.mid(4,1) != "d")
+    { // !! zmienić jakoś te stringi by nie robić takiego dziwnego warunku dla pierwszego przejścia
+        QStr_pieceFrom = "[" + QStr_msgFromSerial.mid(5,2) + "]f";
+        QStr_pieceTo   = "[" + QStr_msgFromSerial.mid(7,2) + "]t";
 
-    findBoardPos(QStr_pieceTo); //znajdź pozycje planszy dla funkcji zbijającej
-    if (a_b_board[n_literaPola][n_cyfraPola] == true) //sprawdzanie czy na pole, gdzie pionek idzie nie jest zajęte
+        findBoardPos(QStr_pieceTo); //znajdź pozycje planszy dla funkcji zbijającej
+
+        if (a_b_board[n_literaPola][n_cyfraPola] == true) //sprawdzanie czy na pole, gdzie pionek idzie nie jest zajęte
+        {
+            QString QStr_pieceToReject = "[" + QStr_msgFromSerial.mid(7,2) + "]r";
+            sendDataToUsb(QStr_pieceToReject, true); //zbijanie pionka
+        }
+        else if (a_b_board[n_literaPola][n_cyfraPola] == false)
+        {
+           sendDataToUsb(QStr_pieceFrom, true);
+        }
+    }
+
+    ///pojedyńcze ruchy przy zbijaniu bierki
+    else if (QStr_msgFromSerial.left(8) == "movedToR") sendDataToUsb("openR1", true);
+    else if (QStr_msgFromSerial.left(8) == "openedR1") sendDataToUsb("downR", true);
+    else if (QStr_msgFromSerial.left(5) == "downR") sendDataToUsb("closeR", true);
+    else if (QStr_msgFromSerial.left(7) == "closedR") sendDataToUsb("upR", true);
+    else if (QStr_msgFromSerial.left(6) == "armUpR") sendDataToUsb("trashR", true);
+    else if (QStr_msgFromSerial.left(8) == "trashedR")
     {
-        QString QStr_pieceToReject = "[" + QStr_msgToProcess.mid(7,2) + "]r";
-        addTextToConsole(QStr_pieceToReject, true); //zbijanie pionka
-        if (QStr_msgFromSerial.left(8) == "movedToR") addTextToConsole("openR1", true);
-        if (QStr_msgFromSerial.left(8) == "openedR1") addTextToConsole("downR", true);
-        if (QStr_msgFromSerial.left(5) == "downR") addTextToConsole("closeR", true);
-        if (QStr_msgFromSerial.left(7) == "closedR") addTextToConsole("upR", true);
-        if (QStr_msgFromSerial.left(6) == "armUpR") addTextToConsole("trashR", true);
-        if (QStr_msgFromSerial.left(8) == "trashedR") addTextToConsole("openR2", true);
+        sendDataToUsb("openR2", true);
         //brak przypadku/reakcji/funkcji dla komunikatu: openedR2. zbędne. tylko dostaję info
         a_b_board[n_literaPola][n_cyfraPola] = false; //miejsce już nie jest zajęte
     }
 
-    addTextToConsole(QStr_pieceFrom, true);
-    if (QStr_msgFromSerial.left(9) == "movedFrom" && QStr_msgFromSerial.mid(10,2) == QStr_pieceFrom.mid(1,2))
-        addTextToConsole("open1", true);
-    if (QStr_msgFromSerial.left(7) == "opened1") addTextToConsole("down1", true);
-    if (QStr_msgFromSerial.left(8)  == "armDown1") addTextToConsole("close1", true);
-    if (QStr_msgFromSerial.left(7)  == "closed1") addTextToConsole("up1", true);
-    if (QStr_msgFromSerial.left(6)  == "armUp1")
+    ///standardowe ruchy przy przenoszeniu bierki
+    else if (QStr_msgFromSerial.left(9) == "movedFrom" && QStr_msgFromSerial.mid(10,2) == QStr_pieceFrom.mid(1,2))
+        sendDataToUsb("open1", true);
+    else if (QStr_msgFromSerial.left(7) == "opened1") sendDataToUsb("down1", true);
+    else if (QStr_msgFromSerial.left(8)  == "armDown1") sendDataToUsb("close1", true);
+    else if (QStr_msgFromSerial.left(7)  == "closed1") sendDataToUsb("up1", true);
+    else if (QStr_msgFromSerial.left(6)  == "armUp1")
     {
         findBoardPos(QStr_pieceFrom); //znajdź pozycję z której pionka zabrano
         a_b_board[n_literaPola][n_cyfraPola] = false; //miejsce ruszanego pionka jest już puste
-        addTextToConsole(QStr_pieceTo, true);
+        sendDataToUsb(QStr_pieceTo, true);
     }
-    if (QStr_msgFromSerial.left(7) == "movedTo" && QStr_msgFromSerial.mid(8,2) == QStr_pieceTo.mid(1,2))
-        addTextToConsole("down2", true);
-    if (QStr_msgFromSerial.left(8)  == "armDown2") addTextToConsole("open2", true);
-    if (QStr_msgFromSerial.left(7)  == "opened2")
+    else if (QStr_msgFromSerial.left(7) == "movedTo" && QStr_msgFromSerial.mid(8,2) == QStr_pieceTo.mid(1,2))
+        sendDataToUsb("down2", true);
+    else if (QStr_msgFromSerial.left(8)  == "armDown2") sendDataToUsb("open2", true);
+    else if (QStr_msgFromSerial.left(7)  == "opened2")
     {
         findBoardPos(QStr_pieceTo); //znajdź pozycję na której znalazł się przeniesiony pionek
         a_b_board[n_literaPola][n_cyfraPola] = true; //nowe miejsce ruszpnego pionka jest już teraz zajęte
-        addTextToConsole("up2", true);
+        sendDataToUsb("up2", true);
     }
-    if (QStr_msgFromSerial.left(6)  == "armUp2") emit processMessage("OK 1\n");
-    /*else
+    else if (QStr_msgFromSerial.left(6)  == "armUp2")
     {
-        addTextToConsole("error:", true);
+        QStr_msgFromSerial = ""; //czyścimy na wszelki wypadek. raczej to zbędne i inaczej wypadałoby to wykonać
+        addTextToUsbConsole("-End of move sequence- \n",false);
+        emit processMessage("OK 1\n");
+    }
+    else
+    {
+        addTextToUsbConsole("error:", true);
+
         // dodawanie tekstu do konsoli
         QString line = QStr_msgFromSerial + "\n";
         ui->output->setPlainText(ui->output->toPlainText() + line);
+
         // auto scroll
         QScrollBar *scroll = ui->output->verticalScrollBar();
         scroll->setValue(scroll->maximum());
-    }*/
+    }
+    QStr_msgFromSerial = ""; // !! spróbować zmienić sprawdzanie na clear() / =empty
 }
 
 // aktualizowanie listy z urządzeniami
@@ -179,23 +204,26 @@ void MainWindow::searchDevices()
 //Slot jest aktywowany po zmianie wartości przez użytkownika w combo box’ie. Ustawia on wskaźnik
 //na nowy obiekt (lub nic) i wyświetla odpowiednią informację w pasku statusu
 void MainWindow::on_port_currentIndexChanged(int index) //zmiana/wybór portu
-{
-    if(port.isOpen()) port.close();
+{ //bodajze jest ustawianie połączenie z portem automatycznie jak tylko zostanie on wybrany
+    if(usb_port->isOpen()) usb_port->close();
     QString txt = "NULL";
     if (index > 0){
         info = &available_port.at(index-1);
         txt = info->portName();
 
         //funkcja setPort() dziedziczy wszystkie atrybuty portu typu BaudRate, DataBits, Parity itd.
-        port.setPort(available_port.at(index-1));
-        if(!port.open(QIODevice::ReadWrite))
-            QMessageBox::warning(this,"Device error","Unable to open port.");
+        usb_port->setPort(available_port.at(index-1)); // ???czy tu ju jest port otwarty/polaczony???
+        if(!usb_port->open(QIODevice::ReadWrite)) //jezeli port nie jest otwarty
+            QMessageBox::warning(this,"Device error","Unable to open port."); //wyrzuć error
+        /*else //a jeżeli jest port otwarty, to łap sygnay z portu i wrzucaj do slotu
+            connect(port,SIGNAL(readyRead()),this,SLOT(readData())); //??? czy to się nei gryzie z readyRead w tcp
+    */
     }
     else
         //wskaźnik czyszczony, by nie wskazywał wcześniejszych informacji ze wskaźnika z pamięci
         info = NULL;
 
-    ui->statusBar->showMessage("Selected port: " + txt,2000);
+    ui->statusBar->showMessage("Połączono z portem: " + txt,2000);
 }
 
 void MainWindow::refresh()
@@ -211,8 +239,8 @@ void MainWindow::on_commandLine_returnPressed() //wciśnięcie przycisku entera
         return;
     }
 
-    addTextToConsole(ui->commandLine->text(),true);
-    ui->commandLine->clear();
+    sendDataToUsb(ui->commandLine->text(),true); //zczytaj wiadomośc z pola textowe i wyślij na usb
+    ui->commandLine->clear(); // wyczyść pole textowe
 }
 
 
@@ -221,19 +249,19 @@ void MainWindow::on_enterButton_clicked() //wciśnięcie entera
     on_commandLine_returnPressed(); //odpala tą samą funkcję co przy wciśnięciu przycisku entera
 }
 
-void MainWindow::addTextToConsole(QString msg, bool sender) //dodawanie komunikatu do konsoli
+void MainWindow::addTextToUsbConsole(QString Qstr_msg, bool sender) //dodawanie komunikatu do konsoli i wysyłanie na usb
 {
-    if(msg.isEmpty()) return; //blokada możliwości wysyłania pustej wiadomości na serial port
+    if(Qstr_msg.isEmpty()) return; //blokada możliwości wysyłania pustej wiadomości na serial port
 
     // komendy działające na form, ale nie na port
-    if(msg == "/clear") { //czyszczenie okna serial portu w formie
+    if(Qstr_msg == "/clear") { //czyszczenie okna serial portu w formie
         ui->output->clear();
         return;
     }
 
     // dodawanie tekstu do konsoli
     QString line = (sender ? "<user>: " : "<device>: ");
-    line += msg;
+    line += Qstr_msg;
     if (sender) line += "\n"; //stringi z arduino zawsze mają enter
     ui->output->setPlainText(ui->output->toPlainText() + line);
 
@@ -241,42 +269,69 @@ void MainWindow::addTextToConsole(QString msg, bool sender) //dodawanie komunika
     QScrollBar *scroll = ui->output->verticalScrollBar();
     scroll->setValue(scroll->maximum());
 
-    // wysyłanie wiadomości do urządzenia
-    if(sender && msg!="error") send(msg+"$"); //każda wiadomość zakończy się dolarem
+    /*// wysyłanie wiadomości do urządzenia
+    // warunek prawdziwy tylko wtedy, gdy wysyłamy dane, a nie odbieramy
+    if(sender) sendDataToUsb(Qstr_msg+"$"); //każda wiadomość zakończy się dolarem*/
 }
 
-void MainWindow::send(QString msg) //wyslij wiadomość na serial port
+void MainWindow::sendDataToUsb(QString QStr_msg, bool sender) //wyslij wiadomość na serial port
 {
-    if(port.isOpen()) {
-        port.write(msg.toStdString().c_str());
-        port.waitForBytesWritten(-1); //??? czekaj w nieskonczonosć???
+    if(usb_port->isOpen() && QStr_msg != "error")
+    {
+        addTextToUsbConsole(QStr_msg, sender);
+
+        usb_port->write(QStr_msg.toStdString().c_str()); // +'$'   -nie działa z tym
+        usb_port->waitForBytesWritten(-1); //??? czekaj w nieskonczonosć??? co to jest
     }
-
-    // spodziewamy się odpowiedzi więc odbieramy dane
-    receive();
+    else addTextToUsbConsole("error", true);
+    // spodziewamy się odpowiedzi więc odbieramy dane:
+    //receive(); -wykomentowana synchroniczna komunikacja
 }
 
-
-void MainWindow::receive() //odbierz wiadomość z serial portu
+//wykomentowana synchroniczna komunikacja po usb:
+/*void MainWindow::receive() //odbierz wiadomość z serial portu
 {
-    // czekamy 5 sekund na odpowiedź
+    // czekamy 10 sekund na odpowiedź
     if(port.waitForReadyRead(10000)) {
-        QByteArray r_data = port.readAll();
+        QByteA_data = port.readAll(); //zapisz w tablicy wszystko co przyszło z usb
 
 
         // sprawdzamy czy nie dojdą żadne nowe dane w 10ms
         while(port.waitForReadyRead(10)) {
-            r_data += port.readAll();
+            QByteA_data += port.readAll(); //składamy tutaj wszystkie dane które przyszły w 1 zmienną
         }
 
-        QString str(r_data); //konwersja danych z serial portu na QString
+        QString QStr_fullSerialMsg(QByteA_data); //konwersja danych z serial portu na QString
         //usuwamy z odbieranych wiadomości znak końca linii. program nie ma mozliwości odbierania
         //kilka wiadomości naraz (i nie powinien potrzebować tego)
-        str.remove("$");
+        QStr_fullSerialMsg.remove("$");
 
-        addTextToConsole(str);
-        QStr_msgFromSerial = str;
+        sendDataToUsb(QStr_fullSerialMsg);
+        QStr_msgFromSerial = QStr_fullSerialMsg;
     }
+}*/
+
+void MainWindow::readData()
+{
+    QByteA_data = usb_port->readAll(); //zapisz w tablicy wszystko co przyszło z usb
+    while(usb_port->waitForReadyRead(100)) // ?? może dać mniej czasu?? będzie to wtedy działało szybciej??
+        QByteA_data += usb_port->readAll(); //składamy tutaj wszystkie dane które przyszły w 1 zmienną
+
+    QString QStr_fullSerialMsg(QByteA_data); //tablicę znaków zamienamy na Qstring
+
+    if(QStr_fullSerialMsg.at(0) == '@' && //jeżeli pierwszy znak wiadomosci to @...
+            QStr_fullSerialMsg.at(QStr_fullSerialMsg.size()-1) == '$') { //...a ostatni to $...
+        QStr_fullSerialMsg.remove('$'); //...to jest to cała wiadomość...
+        QStr_fullSerialMsg.remove('@'); //... i pousuwaj te znaki.
+
+        addTextToUsbConsole(QStr_fullSerialMsg + "\n",false);
+        simplyPieceMoving(QStr_fullSerialMsg); // !!! dosprawdzić czy to tu ok
+        QStr_msgFromSerial = QStr_fullSerialMsg; // !!! dosprawdzić czy to tu ok. można
+        //zrobić z tego po prostu globalną zmienna a nie przypisywać
+
+        QByteA_data.clear();
+    }
+    else addTextToUsbConsole("error: " + QStr_fullSerialMsg,false);
 }
 
 //dodawania wiadmomości do consoli websocketów
@@ -405,7 +460,7 @@ void MainWindow::processMessage(QString QStr_messageToProcess)
             }
         }
 
-        //send(message+"$"); //wyślij tą wiadmość na serial port
+        //sendDataToUsb(message+"$"); //wyślij tą wiadmość na serial port
 
         /* if (pClient == pSender) //jeżeli wiadomośc wpadła od klienta (tj.z sieci)
         {
@@ -566,6 +621,16 @@ void MainWindow::readyRead() //funckja odbierająca odpowiedź z tcp z wcześnie
     // read the data from the socket
     QStr_chenardAnswer = socket->readAll(); //w zmiennej zapisz odpowiedź z chenard
     addTextToTcpConsole("tcp answer: " + QStr_chenardAnswer); //pokaż ją w consoli tcp. \n dodaje się sam
-    if (QStr_chenardAnswer == "OK 1\n") simplyPieceMoving(QStr_chenardQuestion);
-    else emit processMessage(QStr_chenardAnswer);
+    //jeżeli odpowiedź z chenard mówi nam o tym, że właśnie udało się przemieścić w pamięci bierkę...
+    if (QStr_chenardAnswer == "OK 1\n")
+    {
+        addTextToUsbConsole("-Begin move sequence- \n",false);
+        simplyPieceMoving(QStr_chenardQuestion); //...to rozpocznij jej przenoszenie...
+    }
+    else emit processMessage(QStr_chenardAnswer); //...a jak nie, to niech websockety zadecydują co z tym dalej robić.
+}
+
+void MainWindow::on_visual_clicked()
+{
+
 }
