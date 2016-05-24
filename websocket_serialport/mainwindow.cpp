@@ -20,6 +20,8 @@ QString QStr_cmdForSite;                    // zmienna typu temp, do wysłania n
 QString QStr_movementMade;                  // zmienna pamiętająca ruch wykonany ze strony
 QString QStr_pieceFrom;                     // z jakiego pola pionek będzie podnoszony
 QString QStr_pieceTo;                       // na jakie pole pionek będzie przenoszony
+QString QStr_rook_posF;                     // zmienna do roszady: skąd idzie wieża
+QString QStr_rook_posT;                     // zmienna do roszady: dokąd idzie wieża
 QString QStr_msgFromSerial = "";            // wiadomość która przyszła z serial portu
 
 //zamienniki mysqla
@@ -103,6 +105,7 @@ void MainWindow::findBoardPos(QString QStr_pieceRejecting)
     addTextToWebsocketConsole("a_b_board[m][n] = " + QString::number(a_b_board[n_literaPola][n_cyfraPola]) + "\n"); */
 }
 
+// rozpoczęcie ruchu- pierwsze przejście
 void MainWindow::simplyPieceMoving(QString QStr_msgFromSerial) // !! to nie tylko są wiadomość z usb
 {
     if (QStr_msgFromSerial.left(4) == "move" && QStr_msgFromSerial.mid(4,1) != "d")
@@ -117,13 +120,90 @@ void MainWindow::simplyPieceMoving(QString QStr_msgFromSerial) // !! to nie tylk
             QString QStr_pieceToReject = "[" + QStr_msgFromSerial.mid(7,2) + "]r";
             sendDataToUsb(QStr_pieceToReject, true); //zbijanie pionka
         }
-        else if (a_b_board[n_literaPola][n_cyfraPola] == false)
+        //warunek wykonania roszady - da się ten warunki zrobić zwięźlej
+        else if (QStr_msgFromSerial.mid(5,4) == "e1c1" || QStr_msgFromSerial.mid(5,4) == "e1C1" ||
+                 QStr_msgFromSerial.mid(5,4) == "E1c1" || QStr_msgFromSerial.mid(5,4) == "E1C1" ||
+                 QStr_msgFromSerial.mid(5,4) == "e1g1" || QStr_msgFromSerial.mid(5,4) == "e1G1" ||
+                 QStr_msgFromSerial.mid(5,4) == "E1g1" || QStr_msgFromSerial.mid(5,4) == "E1G1" ||
+                 QStr_msgFromSerial.mid(5,4) == "e8c8" || QStr_msgFromSerial.mid(5,4) == "e8C8" ||
+                 QStr_msgFromSerial.mid(5,4) == "E8c8" || QStr_msgFromSerial.mid(5,4) == "E8C8" ||
+                 QStr_msgFromSerial.mid(5,4) == "e8g8" || QStr_msgFromSerial.mid(5,4) == "e8G8" ||
+                 QStr_msgFromSerial.mid(5,4) == "E8g8" || QStr_msgFromSerial.mid(5,4) == "E8G8" )
+        {
+            QStr_pieceFrom += "c"; //jest to info dla arduino, że mamy do czynienia z roszadą
+            QStr_pieceTo += "c";
+
+            //ustawiane skąd-dokąd przenoszona będzie wieża podczas roszady
+            if (QStr_pieceTo.mid(1,1) == "c")
+            {
+                QStr_rook_posF = "[a";
+                QStr_rook_posT = "[d";
+            }
+            else
+            {
+                QStr_rook_posF = "[h";
+                QStr_rook_posT = "[f";
+            }
+            if(QStr_pieceTo.mid(2,1) == "1")
+            {
+                QStr_rook_posF += "1]fw";
+                QStr_rook_posT += "1]tw";
+            }
+            else
+            {
+                QStr_rook_posF += "8]fw";
+                QStr_rook_posT += "8]tw";
+            }
+
+            sendDataToUsb(QStr_pieceFrom, true); //ustaw się nad króla roszodowanego
+        }
+        else if (a_b_board[n_literaPola][n_cyfraPola] == false) //zwykłe przemieszczanie pionka
         {
            sendDataToUsb(QStr_pieceFrom, true);
         }
     }
 
-    ///pojedyńcze ruchy przy zbijaniu bierki
+    /// roszady
+    else if (QStr_msgFromSerial.left(10) == "movedFromC") sendDataToUsb("openC1", true);
+    else if (QStr_msgFromSerial.left(8) == "openedC1") sendDataToUsb("downC1", true);
+    else if (QStr_msgFromSerial.left(9) == "armDownC1") sendDataToUsb("closeC1", true);
+    else if (QStr_msgFromSerial.left(8) == "closedC1") sendDataToUsb("upC1", true);
+    else if (QStr_msgFromSerial.left(7) == "armUpC1") sendDataToUsb(QStr_pieceTo, true);
+    else if (QStr_msgFromSerial.left(8) == "movedToC") sendDataToUsb("downC2", true);
+    else if (QStr_msgFromSerial.left(9) == "armDownC2") sendDataToUsb("openC2", true);
+    else if (QStr_msgFromSerial.left(8) == "openedC2") sendDataToUsb("upC2", true);
+    else if (QStr_msgFromSerial.left(7) == "armUpC2") sendDataToUsb(QStr_rook_posF, true);
+    else if (QStr_msgFromSerial.left(10) == "movedFromW") sendDataToUsb("downC3", true);
+    else if (QStr_msgFromSerial.left(9) == "armDownC3") sendDataToUsb("closeC2", true);
+    else if (QStr_msgFromSerial.left(8) == "closedC2") sendDataToUsb("upC3", true);
+    else if (QStr_msgFromSerial.left(7) == "armUpC3") sendDataToUsb(QStr_rook_posT, true);
+    else if (QStr_msgFromSerial.left(8) == "movedToW") sendDataToUsb("downC4", true);
+    else if (QStr_msgFromSerial.left(9) == "armDownC4") sendDataToUsb("openC3", true);
+    else if (QStr_msgFromSerial.left(8) == "openedC3") sendDataToUsb("upC4", true);
+    else if (QStr_msgFromSerial.left(7) == "armUpC4")
+    {
+        // zmiana miejsc na tablicy pól zajętych
+        findBoardPos(QStr_pieceFrom);
+        a_b_board[n_literaPola][n_cyfraPola] = false;
+        findBoardPos(QStr_pieceTo);
+        a_b_board[n_literaPola][n_cyfraPola] = true;
+        findBoardPos(QStr_rook_posF);
+        a_b_board[n_literaPola][n_cyfraPola] = false;
+        findBoardPos(QStr_rook_posT);
+        a_b_board[n_literaPola][n_cyfraPola] = true;
+
+        //czyszczenie zmiennych, gdyby przez przypadek coś kiedyś chciało ich bez przypisywania używać
+        QStr_pieceFrom.clear();
+        QStr_pieceTo.clear();
+        QStr_rook_posF.clear();
+        QStr_rook_posT.clear();
+
+        QStr_msgFromSerial = ""; //czyścimy na wszelki wypadek. raczej to zbędne i inaczej wypadałoby to wykonać
+        addTextToUsbConsole("-End of move sequence- \n",false);
+        emit processMessage("OK 1\n");
+    }
+
+    /// ruchy przy zbijaniu bierki
     else if (QStr_msgFromSerial.left(8) == "movedToR") sendDataToUsb("openR1", true);
     else if (QStr_msgFromSerial.left(8) == "openedR1") sendDataToUsb("downR", true);
     else if (QStr_msgFromSerial.left(5) == "downR") sendDataToUsb("closeR", true);
@@ -136,7 +216,7 @@ void MainWindow::simplyPieceMoving(QString QStr_msgFromSerial) // !! to nie tylk
         a_b_board[n_literaPola][n_cyfraPola] = false; //miejsce już nie jest zajęte
     }
 
-    ///standardowe ruchy przy przenoszeniu bierki
+    /// ruchy przy standardowym przenoszeniu bierki
     else if (QStr_msgFromSerial.left(9) == "movedFrom" && QStr_msgFromSerial.mid(10,2) == QStr_pieceFrom.mid(1,2))
         sendDataToUsb("open1", true);
     else if (QStr_msgFromSerial.left(7) == "opened1") sendDataToUsb("down1", true);
@@ -223,7 +303,7 @@ void MainWindow::on_port_currentIndexChanged(int index) //zmiana/wybór portu
         //wskaźnik czyszczony, by nie wskazywał wcześniejszych informacji ze wskaźnika z pamięci
         info = NULL;
 
-    ui->statusBar->showMessage("Połączono z portem: " + txt,2000);
+    ui->statusBar->showMessage("Połączono z portem: " + txt,5000);
 }
 
 void MainWindow::refresh()
@@ -260,7 +340,7 @@ void MainWindow::addTextToUsbConsole(QString Qstr_msg, bool sender) //dodawanie 
     }
 
     // dodawanie tekstu do konsoli
-    QString line = (sender ? "<user>: " : "<device>: ");
+    QString line = (sender ? "< user > : " : "<device>: ");
     line += Qstr_msg;
     if (sender) line += "\n"; //stringi z arduino zawsze mają enter
     ui->output->setPlainText(ui->output->toPlainText() + line);
@@ -347,6 +427,7 @@ void MainWindow::addTextToWebsocketConsole(QString msg)
 ///////////////////websockets
 void MainWindow::onNewConnection() //nowe połączenia
 {
+    // !!! zacięcie czasami przy nowymn połączeniu !!!
     QWebSocket *pSocket = m_pWebSocketServer->nextPendingConnection();
 
     //jeżeli socket dostanie wiadomość, to odpalamy metody przetwarzająca ją
@@ -372,15 +453,30 @@ void MainWindow::processMessage(QString QStr_messageToProcess)
     //wiadomość pójdzie tylko do tego kto ją przysłał
     if (pClient && QStr_messageToProcess == "keepConnected")
         sendWsMsgToSite(pClient, "connectionOnline", "");
-    else if (QStr_messageToProcess == "new" || QStr_messageToProcess.left(4) == "move")
+    else if (QStr_messageToProcess.left(4) == "move")
     {
         if (b_blokada_zapytan == false) //jeżeli chenard nie przetwarza żadnego zapytania
         {  //!!! program gdzieś musi stackować zapytania których nie może jeszcze przetworzyć
             b_blokada_zapytan = true;
-            if (QStr_messageToProcess.left(4) == "move") QStr_movementMade = QStr_messageToProcess.mid(5);
+
+            QStr_movementMade = QStr_messageToProcess.mid(5);
             QStr_chenardQuestion = QStr_messageToProcess; //string do tcp będzie przekazana przez globalną zmienną
 
             doConnect(); //łączy i rozłącza z tcp za każdym razem gdy jest wiadomość do przesłania
+        }
+        else addTextToWebsocketConsole("Error! Previous msg hasn't been processed.\n");
+    }
+    else if (QStr_messageToProcess == "new")
+    {
+        if (b_blokada_zapytan == false) //jeżeli chenard nie przetwarza żadnego zapytania
+        {  //!!! program gdzieś musi stackować zapytania których nie może jeszcze przetworzyć
+            b_blokada_zapytan = true;
+            if (QStr_nameWhite != "Biały" && QStr_nameWhite != "Czarny" && QStr_nameWhite != "" && QStr_nameWhite!= "")
+            {
+                QStr_chenardQuestion = QStr_messageToProcess; //string do tcp będzie przekazana przez globalną zmienną
+                doConnect(); //łączy i rozłącza z tcp za każdym razem gdy jest wiadomość do przesłania
+            }
+            else addTextToWebsocketConsole("Error! Wrong players names.\n");
         }
         else addTextToWebsocketConsole("Error! Previous msg hasn't been processed.\n");
     }
@@ -628,9 +724,4 @@ void MainWindow::readyRead() //funckja odbierająca odpowiedź z tcp z wcześnie
         simplyPieceMoving(QStr_chenardQuestion); //...to rozpocznij jej przenoszenie...
     }
     else emit processMessage(QStr_chenardAnswer); //...a jak nie, to niech websockety zadecydują co z tym dalej robić.
-}
-
-void MainWindow::on_visual_clicked()
-{
-
 }

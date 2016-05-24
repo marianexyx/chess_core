@@ -54,8 +54,6 @@ private Q_SLOTS:
     void processMessage(QString QStr_messageToProcess);
     void socketDisconnected();
 
-    void on_visual_clicked();
-
 private:
     Ui::MainWindow *ui;
 
@@ -67,7 +65,7 @@ private:
     void addTextToUsbConsole(QString text, bool sender=false);
     void sendDataToUsb(QString QStr_msg, bool sender=false); //wysyłanie wiadomośći na usb
     void receive(); //odbieranie wiadomości z usb
-    void simplyPieceMoving(QString QStr_msgFromSerial);
+    void simplyPieceMoving(QString QStr_msgFromSerial); // !! nie simply tylko raczej all
     void findBoardPos(QString QStr_pieceRejecting);
 
     //websockets
