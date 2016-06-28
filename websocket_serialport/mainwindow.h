@@ -30,7 +30,7 @@ public:
 
     virtual ~MainWindow();
 
-    void doConnect(); //tcp
+    void doTcpConnect(); //tcp
 
     //nie mam deklaracji żadnego sygnału (powinien mieć?)
 
@@ -40,7 +40,7 @@ private slots:
     void refresh();
     void on_commandLine_returnPressed(); //reakcja na wciśnięcie entera na klawiaturze...
     void on_enterButton_clicked(); //... i przycisku w programie
-    void readData(); //sczytywanie danych lecących asynchronicznie z usb
+    void readUsbData(); //sczytywanie danych lecących asynchronicznie z usb
 
     //tcp
     void connected(); //sygnał i slot muszą mieć takie same przyjmowane argumenty
@@ -51,7 +51,7 @@ private slots:
 private Q_SLOTS:
     //websockets
     void onNewConnection();
-    void processMessage(QString QStr_messageToProcess);
+    void processWebsocketMsg(QString QS_WbstMsgToProcess);
     void socketDisconnected();
 
 private:
@@ -63,16 +63,25 @@ private:
     //addTextToUsbConsole jako argumenty przyjmuje wiadomość, którą ma wstawić na konsolę i info o tym czy
     //jest ona od użytkownika (a więc należy ją jeszcze wysłać do urządzenia), czy od urządzenia
     void addTextToUsbConsole(QString text, bool sender=false);
-    void sendDataToUsb(QString QStr_msg, bool sender=false); //wysyłanie wiadomośći na usb
+    void sendDataToUsb(QString QS_msg, bool sender=false); //wysyłanie wiadomośći na usb
     void receive(); //odbieranie wiadomości z usb
-    void simplyPieceMoving(QString QStr_msgFromSerial); // !! nie simply tylko raczej all
-    void findBoardPos(QString QStr_pieceRejecting);
+
+    void normalPieceMoving(QString QS_normalMove);
+    bool removeStatements();
+    void removePieceSequence(QString QS_msgFromSerial);
+    void castlingMovingSequence(QString QS_msgFromSerial);
+    bool castlingStatements(QString QS_possibleCastlingVal);
+    void enpassantMovingSequence();
+    bool testEnpassant();
+    bool testPromotion();
+
+    void findBoardPos(QString QS_piecePositions);
 
     //websockets
     QWebSocketServer *m_pWebSocketServer;
     QList<QWebSocket *> m_clients;
     void addTextToWebsocketConsole(QString text);
-    void sendWsMsgToSite(QWebSocket* client, QString QStr_command, QString QStr_prcessedMsg);
+    void sendWsMsgToSite(QWebSocket* client, QString QS_command, QString QS_prcessedMsg);
 
     //tcp
     QTcpSocket *socket;
