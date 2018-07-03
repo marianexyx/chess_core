@@ -1,2 +1,3 @@
 # chess_core
-Główny program do przesyłania informacji pomiędzy systemami
+ARCHIVE REPOSITORY
+Old non-objective PC core server for controlling self made Arduino type robotic arm for playing chess.
